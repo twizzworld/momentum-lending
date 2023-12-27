@@ -75,7 +75,35 @@ contract OvercollateralizedLendingProtocol {
         totalLiquidity -= _amount;
     }
 
-    // Other functions (depositCollateral, borrow, repay, etc.) remain unchanged
+    function depositCollateral(uint256 _collateralAmount) external {
+        require(collateralToken.transferFrom(msg.sender, address(this), _collateralAmount), "Transfer failed");
+        loans[msg.sender].collateral += _collateralAmount;
+    }
+
+    function borrow(uint256 _amount) external {
+        uint256 requiredCollateral = (_amount * COLLATERAL_FACTOR) / 100;
+        require(loans[msg.sender].collateral >= requiredCollateral, "Insufficient collateral");
+        
+        loans[msg.sender].amount += _amount;
+        loans[msg.sender].startTime = block.timestamp;
+        lendingToken.transfer(msg.sender, _amount);
+    }
+
+    function repay(uint256 _amount) external {
+        Loan storage loan = loans[msg.sender];
+        require(_amount <= loan.amount, "Repay amount too high");
+        
+        uint256 interest = calculateInterest(loan.amount, loan.startTime);
+        distributeInterest(interest);
+        require(lendingToken.transferFrom(msg.sender, address(this), _amount + interest), "Transfer failed");
+        
+        loan.amount -= _amount;
+        loan.interestAccrued += interest;
+        if (loan.amount == 0) {
+            collateralToken.transfer(msg.sender, loan.collateral);
+            loan.collateral = 0;
+        }
+    }
 
     function calculateInterest(uint256 _principal, uint256 _startTime) public view returns (uint256) {
         uint256 timeElapsed = block.timestamp - _startTime;
